@@ -211,8 +211,18 @@ body{background:#0a0f14;color:white;overflow-x:hidden;}
 
 <script>
 // Modal
-function openModal(id){document.getElementById(id).classList.add("active");}
-function closeModal(){document.querySelectorAll(".modal").forEach(m=>m.classList.remove("active"));}
+function openModal(id){
+  document.getElementById(id).classList.add("active");
+  if(id==='clima'){
+    actualizarClima();
+    if(climaInterval) clearInterval(climaInterval);
+    climaInterval = setInterval(actualizarClima, 600000); // cada 10 min
+  }
+}
+function closeModal(){
+  document.querySelectorAll(".modal").forEach(m=>m.classList.remove("active"));
+  if(climaInterval){ clearInterval(climaInterval); climaInterval = null; }
+}
 
 // Noticias dinámicas
 const noticias = [
@@ -239,32 +249,65 @@ noticias.forEach(n=>{
   newsGrid.appendChild(card);
 });
 
-// CLIMA DESTACADO
-const weatherData = [
-  {city:"Santiago", temp:"26°C", desc:"Parcialmente soleado", wind:"12 km/h", humidity:"40%", icon:"☀️", sunrise:"06:15", sunset:"19:45"},
-  {city:"Valparaíso", temp:"20°C", desc:"Nublado", wind:"15 km/h", humidity:"55%", icon:"⛅", sunrise:"06:10", sunset:"19:40"},
-  {city:"Puerto Varas", temp:"18°C", desc:"Lluvia ligera", wind:"8 km/h", humidity:"60%", icon:"🌧️", sunrise:"06:05", sunset:"19:50"},
-  {city:"Punta Arenas", temp:"5°C", desc:"Frío con nieve", wind:"20 km/h", humidity:"80%", icon:"❄️", sunrise:"06:30", sunset:"19:15"},
-  {city:"La Serena", temp:"24°C", desc:"Soleado", wind:"10 km/h", humidity:"30%", icon:"🌞", sunrise:"06:00", sunset:"19:55"}
+// CLIMA DESTACADO - API REAL
+// CLIMA DESTACADO - API REAL SIN KEY
+const CITIES = [
+  {city:"Santiago", lat:-33.4489, lon:-70.6693},
+  {city:"Valparaíso", lat:-33.0472, lon:-71.6127},
+  {city:"Puerto Varas", lat:-41.317, lon:-72.985},
+  {city:"Punta Arenas", lat:-53.1638, lon:-70.9171},
+  {city:"La Serena", lat:-29.9045, lon:-71.2489}
 ];
 
 const weatherContainer = document.querySelector(".weather-container");
-weatherContainer.innerHTML = "";
+let climaInterval = null;
 
-weatherData.forEach(w => {
-  const card = document.createElement("div");
-  card.className = "weather-card";
-  card.innerHTML = `
-    <h2>${w.city}</h2>
-    <div class="icon">${w.icon}</div>
-    <div class="temp">${w.temp}</div>
-    <p>${w.desc}</p>
-    <p>💨 Viento: ${w.wind} | 💧 Humedad: ${w.humidity}</p>
-    <p class="details">🌅 ${w.sunrise} | 🌇 ${w.sunset}</p>
-  `;
-  weatherContainer.appendChild(card);
-});
+function getWeatherInfo(code){
+  const map = {
+    0:{d:'Despejado',i:'☀️'},1:{d:'Mayormente despejado',i:'🌤️'},2:{d:'Parcialmente nublado',i:'⛅'},3:{d:'Nublado',i:'☁️'},
+    45:{d:'Niebla',i:'🌫️'},48:{d:'Niebla',i:'🌫️'},51:{d:'Llovizna',i:'🌦️'},61:{d:'Lluvia ligera',i:'🌧️'},
+    63:{d:'Lluvia',i:'🌧️'},65:{d:'Lluvia intensa',i:'🌧️'},71:{d:'Nieve',i:'❄️'},95:{d:'Tormenta',i:'⛈️'}
+  };
+  return map[code] || {d:'Variable',i:'🌡️'};
+}
 
+async function actualizarClima(){
+  weatherContainer.innerHTML = "<p style='text-align:center;width:100%'>Cargando clima...</p>";
+
+  try {
+    const datos = await Promise.all(CITIES.map(async c => {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=sunrise,sunset&timezone=America%2FSantiago&forecast_days=1`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      return await res.json();
+    }));
+
+    weatherContainer.innerHTML = "";
+    const ahora = new Date().toLocaleTimeString('es-CL');
+
+    datos.forEach((d,i) => {
+      const w = getWeatherInfo(d.current.weather_code);
+      const sunrise = new Date(d.daily.sunrise[0]).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+      const sunset = new Date(d.daily.sunset[0]).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+
+      const card = document.createElement("div");
+      card.className = "weather-card";
+      card.innerHTML = `
+        <h2>${CITIES[i].city}</h2>
+        <div class="icon">${w.i}</div>
+        <div class="temp">${Math.round(d.current.temperature_2m)}°C</div>
+        <p>${w.d}</p>
+        <p>💨 Viento: ${Math.round(d.current.wind_speed_10m)} km/h | 💧 Humedad: ${d.current.relative_humidity_2m}%</p>
+        <p class="details">🌅 ${sunrise} | 🌇 ${sunset}</p>
+        <p style="font-size:12px;opacity:0.6;margin-top:10px">Actualizado: ${ahora}</p>
+      `;
+      weatherContainer.appendChild(card);
+    });
+  } catch(e){
+    console.error(e);
+    weatherContainer.innerHTML = `<p style='text-align:center'>Error: ${e.message}. Revisa consola (F12).</p>`;
+  }
+}
 // ✅ FIX VIDEO MÓVIL
 document.addEventListener("DOMContentLoaded", () => {
   const videos = document.querySelectorAll("video");
